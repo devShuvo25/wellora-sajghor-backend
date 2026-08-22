@@ -1,16 +1,2 @@
-declare global {
-  namespace Express {
-    interface Request {
-      file?: {
-        fieldname: string;
-        originalname: string;
-        encoding: string;
-        mimetype: string;
-        buffer: Buffer;
-        size: number;
-      };
-    }
-  }
-}
-
+// This file intentionally empty — Express Request augmentation is handled in src/app/interface/index.ts
 export {};

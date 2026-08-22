@@ -1,16 +1,19 @@
-import { Request, Response } from "express";
-import httpStatus from "http-status";
-import { DashboardService } from "./dashboard.service";
+import httpStatus from 'http-status';
+import { Request, Response } from 'express';
+import catchAsync from '../../utils/catchAsync';
+import sendResponse from '../../utils/sendResponse';
+import { DashboardService } from './dashboard.service';
 
-const getStatistics = async (req: Request, res: Response) => {
+const getStatistics = catchAsync(async (_req: Request, res: Response) => {
   const result = await DashboardService.getStatistics();
 
-  res.status(httpStatus.OK).json({
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
     success: true,
-    message: "Dashboard statistics retrieved successfully",
+    message: 'Dashboard statistics retrieved successfully',
     data: result,
   });
-};
+});
 
 export const DashboardController = {
   getStatistics,

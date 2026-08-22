@@ -1,16 +1,29 @@
-import { UserRoleEnum, UserStatus } from "@prisma/client";
+import { Role, UserStatus } from '@prisma/client';
 
-// user.types.ts
-export type IUpdateUser = {
-  firstName?: string;
-  lastName?: string;
-  email?: string;
-  password?: string;
-  role?: UserRoleEnum;
+export interface IUpdateProfile {
+  name?: string;
+  phoneNumber?: string;
+  avatar?: string;
+  oldPassword?: string;
+  newPassword?: string;
+}
+
+export interface IAddressPayload {
+  label: string;
+  recipient: string;
+  phone: string;
+  address: string;
+  city: string;
+  district?: string;
+  isDefault?: boolean;
+}
+
+export interface IUserFilterOptions {
+  searchTerm?: string;
+  role?: Role;
   status?: UserStatus;
-};
-
-export type IAssignCategories = {
-  categoryIds: string[];
-};
-
+  page?: number;
+  limit?: number;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
+}

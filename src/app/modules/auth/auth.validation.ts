@@ -1,65 +1,69 @@
-// auth.validation.ts (adding registerUser)
-
 import { z } from 'zod';
+import { Role } from '@prisma/client';
 
-export const registerSchema = z.object({
+const registerValidationSchema = z.object({
   body: z.object({
-    firstName: z.string().min(2),
-    lastName: z.string().min(2),
-    universityId: z.string().min(3).optional(),
-    program: z.enum(['BSC', 'MSC', 'BBA', 'MBA', 'OTHERS']),
-    departmentId: z.string(),
-    email: z.string().email(),
-    role: z.enum(['USER', 'ADMIN']),
-  }),
-});
-
-export const verifyOtpSchema = z.object({
-  body: z.object({
-    email: z.string().email(),
-    otp: z.string().length(6),
-    password: z.string().min(6),
+    name: z.string({ required_error: 'Name is required' }).min(2),
+    email: z.string({ required_error: 'Email is required' }).email('Invalid email address'),
+    password: z.string({ required_error: 'Password is required' }).min(6, 'Password must be at least 6 characters'),
+    phoneNumber: z.string().optional(),
+    role: z.nativeEnum(Role).optional().default(Role.CUSTOMER),
+    referredByCode: z.string().optional(),
+    region: z.string().optional(),
+    bankName: z.string().optional(),
+    accountNumber: z.string().optional(),
+    accountName: z.string().optional(),
+    bkashNumber: z.string().optional(),
+    nagadNumber: z.string().optional(),
   }),
 });
 
-export const loginSchema = z.object({
+const verifyOtpValidationSchema = z.object({
   body: z.object({
-    email: z.string().email(),
-    password: z.string(),
+    email: z.string({ required_error: 'Email is required' }).email('Invalid email address'),
+    otp: z.string({ required_error: 'OTP is required' }).length(6, 'OTP must be 6 digits'),
   }),
 });
 
-const loginUser = z.object({
+const resendOtpValidationSchema = z.object({
   body: z.object({
-    email: z
-      .string({
-        required_error: 'Email is required!',
-      })
-      .email({
-        message: 'Invalid email format!',
-      }),
-    password: z.string({
-      required_error: 'Password is required!',
-    }),
+    email: z.string({ required_error: 'Email is required' }).email('Invalid email address'),
   }),
 });
-const forgotPasswordValidation = z.object({
+
+const loginValidationSchema = z.object({
   body: z.object({
-    email: z.string().email('Invalid email address'),
+    email: z.string({ required_error: 'Email is required' }).email('Invalid email address'),
+    password: z.string({ required_error: 'Password is required' }),
   }),
 });
-const resetPasswordValidation = z.object({
+
+const forgotPasswordValidationSchema = z.object({
   body: z.object({
-    email: z.string().email('Invalid email address'),
-    otp: z.string().length(6, 'OTP must be 6 digits'),
-    newPassword: z
-      .string()
-      .min(6, 'Password must be at least 6 characters long'),
+    email: z.string({ required_error: 'Email is required' }).email('Invalid email address'),
   }),
 });
-export const authValidation = {
-  registerSchema,
-  loginUser,
-  forgotPasswordValidation,
-  resetPasswordValidation,
+
+const resetPasswordValidationSchema = z.object({
+  body: z.object({
+    email: z.string({ required_error: 'Email is required' }).email('Invalid email address'),
+    otp: z.string({ required_error: 'OTP is required' }).min(4),
+    newPassword: z.string({ required_error: 'New password is required' }).min(6),
+  }),
+});
+
+const refreshTokenValidationSchema = z.object({
+  body: z.object({
+    refreshToken: z.string({ required_error: 'Refresh token is required' }),
+  }),
+});
+
+export const AuthValidation = {
+  registerValidationSchema,
+  verifyOtpValidationSchema,
+  resendOtpValidationSchema,
+  loginValidationSchema,
+  forgotPasswordValidationSchema,
+  resetPasswordValidationSchema,
+  refreshTokenValidationSchema,
 };

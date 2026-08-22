@@ -1,20 +1,24 @@
-// category.validation.ts
-import z from "zod";
+import { z } from 'zod';
 
-const createCategory = z.object({
+const createCategoryValidationSchema = z.object({
   body: z.object({
-    name: z.string({
-      required_error: "Name is required!",
-    }),
+    name: z.string({ required_error: 'Category name is required' }).min(2),
+    slug: z.string().optional(),
     description: z.string().optional(),
+    image: z.string().url().optional(),
   }),
 });
 
-const updateCategory = z.object({
+const updateCategoryValidationSchema = z.object({
   body: z.object({
-    name: z.string().optional(),
+    name: z.string().min(2).optional(),
+    slug: z.string().optional(),
     description: z.string().optional(),
+    image: z.string().url().optional(),
   }),
 });
 
-export const categoryValidation = { createCategory, updateCategory };
+export const CategoryValidation = {
+  createCategoryValidationSchema,
+  updateCategoryValidationSchema,
+};

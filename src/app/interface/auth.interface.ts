@@ -1,14 +1,11 @@
+import { Role, UserStatus } from '@prisma/client';
 import { JwtPayload } from 'jsonwebtoken';
 
 export interface ITokenUser {
   id: string;
-  universityId?: string;
-  firstName: string;
-  lastName: string;
   email: string;
-  role: string;
-  program: string;
-  departmentId: string;
+  role: Role;
+  status?: UserStatus;
 }
 
 export interface IDecodedUser extends JwtPayload, ITokenUser {}

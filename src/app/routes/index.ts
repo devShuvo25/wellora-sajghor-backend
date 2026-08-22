@@ -1,14 +1,15 @@
-import express, { Router, Request, Response } from 'express';
+import express, { Router } from 'express';
 import { AuthRoutes } from '../modules/auth/auth.routes';
-// need to import below two to upload image -> upload is the middleware
-// uploadImage is the function
-import { upload } from '../middlewares/upload';
-import { CategoryRoutes } from '../modules/category/category.routes';
-import { PermissionRoutes } from '../modules/permission/permission.routes';
 import { UserRoutes } from '../modules/user/user.routes';
-import { DocumentRoutes } from '../modules/document/document.routes';
+import { CategoryRoutes } from '../modules/category/category.routes';
+import { ProductRoutes } from '../modules/product/product.routes';
+import { OrderRoutes } from '../modules/order/order.routes';
+import { DistributorRoutes } from '../modules/distributor/distributor.routes';
+import { WishlistRoutes } from '../modules/wishlist/wishlist.routes';
+import { LoyaltyRoutes } from '../modules/loyalty/loyalty.routes';
+import { MarketingKitRoutes } from '../modules/marketingKit/marketingKit.routes';
+import { AdminRoutes } from '../modules/admin/admin.routes';
 import { DashboardRoutes } from '../modules/dashboard/dashboard.routes';
-import { DepartmentRoutes } from '../modules/department/department.routes';
 
 const router: Router = express.Router();
 
@@ -31,31 +32,39 @@ const moduleRoutes: ModuleRoute[] = [
     route: CategoryRoutes,
   },
   {
-    path: '/permissions',
-    route: PermissionRoutes,
+    path: '/products',
+    route: ProductRoutes,
   },
   {
-    path: '/documents',
-    route: DocumentRoutes,
+    path: '/orders',
+    route: OrderRoutes,
+  },
+  {
+    path: '/distributors',
+    route: DistributorRoutes,
+  },
+  {
+    path: '/wishlist',
+    route: WishlistRoutes,
+  },
+  {
+    path: '/loyalty',
+    route: LoyaltyRoutes,
+  },
+  {
+    path: '/marketing-kits',
+    route: MarketingKitRoutes,
+  },
+  {
+    path: '/admin',
+    route: AdminRoutes,
   },
   {
     path: '/dashboard',
     route: DashboardRoutes,
   },
-  {
-    path: '/departments',
-    route: DepartmentRoutes,
-  }
 ];
 
-moduleRoutes.forEach(route => router.use(route.path, route.route));
-
-// ROUTER TO UPLOAD IMAGE
-/**
- * @method POST
- * @route {baseUrl}/upload
- * @select form-data in postman
- * @set key "image" and select image from your device
- */
+moduleRoutes.forEach((route) => router.use(route.path, route.route));
 
 export default router;

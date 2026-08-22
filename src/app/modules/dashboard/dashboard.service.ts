@@ -1,106 +1,75 @@
-import { UserRoleEnum, UserStatus } from "@prisma/client";
-import dayjs from "dayjs";
-import prisma from "../../utils/prisma";
+import { OrderStatus, Role, UserStatus } from '@prisma/client';
+import dayjs from 'dayjs';
+import prisma from '../../utils/prisma';
 
 const getStatistics = async () => {
   /* ---------------- OVERVIEW ---------------- */
   const [
     totalUsers,
-    totalAdmins,
-    totalDocuments,
+    totalCustomers,
+    totalDistributors,
+    totalProducts,
     totalCategories,
-    activeUsers,
-    blockedUsers,
+    totalOrders,
+    deliveredOrders,
   ] = await Promise.all([
     prisma.user.count(),
-    prisma.user.count({
-      where: { role: { in: [UserRoleEnum.ADMIN, UserRoleEnum.SUPERADMIN] } },
-    }),
-    prisma.document.count(),
+    prisma.user.count({ where: { role: Role.CUSTOMER } }),
+    prisma.distributorProfile.count({ where: { user: { status: UserStatus.ACTIVE } } }),
+    prisma.product.count(),
     prisma.category.count(),
-    prisma.user.count({ where: { status: UserStatus.ACTIVATE } }),
-    prisma.user.count({ where: { status: UserStatus.BLOCKED } }),
+    prisma.order.count(),
+    prisma.order.findMany({
+      where: { status: OrderStatus.DELIVERED },
+      select: { totalAmount: true },
+    }),
   ]);
 
-  /* ---------------- MONTHLY STATS ---------------- */
-  const last6Months = [...Array(6)].map((_, i) => {
-    const date = dayjs().subtract(i, "month");
-    return {
-      start: date.startOf("month").toDate(),
-      end: date.endOf("month").toDate(),
-      label: date.format("MMM"),
-    };
-  }).reverse();
+  const totalRevenue = deliveredOrders.reduce((acc, curr) => acc + curr.totalAmount, 0);
 
-  const monthlyStats = await Promise.all(
+  /* ---------------- MONTHLY REVENUE & ORDERS (LAST 6 MONTHS) ---------------- */
+  const last6Months = [...Array(6)]
+    .map((_, i) => {
+      const date = dayjs().subtract(i, 'month');
+      return {
+        start: date.startOf('month').toDate(),
+        end: date.endOf('month').toDate(),
+        label: date.format('MMM YYYY'),
+      };
+    })
+    .reverse();
+
+  const monthlySales = await Promise.all(
     last6Months.map(async (m) => {
-      const users = await prisma.user.count({
+      const orders = await prisma.order.findMany({
         where: {
           createdAt: { gte: m.start, lte: m.end },
+          status: OrderStatus.DELIVERED,
         },
+        select: { totalAmount: true },
       });
 
-      const documents = await prisma.document.count({
-        where: {
-          createdAt: { gte: m.start, lte: m.end },
-        },
-      });
+      const revenue = orders.reduce((sum, o) => sum + o.totalAmount, 0);
 
       return {
         month: m.label,
-        users,
-        documents,
+        ordersCount: orders.length,
+        revenue: Number(revenue.toFixed(2)),
       };
-    })
+    }),
   );
-
-  /* ---------------- USER GROWTH (LAST 30 DAYS) ---------------- */
-  const last30Days = [...Array(30)].map((_, i) =>
-    dayjs().subtract(i, "day").format("YYYY-MM-DD")
-  ).reverse();
-
-  const userGrowth = await Promise.all(
-    last30Days.map(async (date) => {
-      const start = dayjs(date).startOf("day").toDate();
-      const end = dayjs(date).endOf("day").toDate();
-
-      const count = await prisma.user.count({
-        where: {
-          createdAt: { gte: start, lte: end },
-        },
-      });
-
-      return { date, count };
-    })
-  );
-
-  /* ---------------- DOCUMENTS BY CATEGORY ---------------- */
-  const documentsByCategory = await prisma.category.findMany({
-    select: {
-      name: true,
-      _count: {
-        select: {
-          documents: true,
-        },
-      },
-    },
-  });
 
   return {
     overview: {
-      users: totalUsers,
-      admins: totalAdmins,
-      documents: totalDocuments,
-      categories: totalCategories,
-      activeUsers,
-      blockedUsers,
+      totalUsers,
+      totalCustomers,
+      totalDistributors,
+      totalProducts,
+      totalCategories,
+      totalOrders,
+      totalRevenue: Number(totalRevenue.toFixed(2)),
     },
-    monthlyStats,
-    userGrowth,
-    documentsByCategory: documentsByCategory.map((c) => ({
-      category: c.name,
-      documents: c._count.documents,
-    })),
+    monthlySales,
   };
 };
 

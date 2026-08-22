@@ -1,20 +1,18 @@
-import { ProgramEnum, UserRoleEnum } from '@prisma/client';
+import { Role } from '@prisma/client';
 
 export interface IRegisterUser {
-  firstName: string;
-  lastName: string;
-  universityId?: string;
-  program: ProgramEnum;
-  departmentId: string;
+  name: string;
   email: string;
-  role: UserRoleEnum; // STUDENT | TEACHER
-  password?: string;
-}
-
-export interface IVerifyOtp {
-  email: string;
-  otp: string;
   password: string;
+  phoneNumber?: string;
+  role?: Role;
+  referredByCode?: string; // Optional referral code from another distributor
+  region?: string;         // For distributor
+  bankName?: string;
+  accountNumber?: string;
+  accountName?: string;
+  bkashNumber?: string;
+  nagadNumber?: string;
 }
 
 export interface ILoginUser {
@@ -22,26 +20,8 @@ export interface ILoginUser {
   password: string;
 }
 
-export interface IAuthResponse {
-  accessToken: string;
-  refreshToken?: string;
-}
-
-export type IChangePassword = {
-  oldPassword: string;
-  newPassword: string;
-};
-export type IForgotPassword = {
-  email: string;
-};
-export type IResetPassword = {
+export interface IResetPassword {
   email: string;
   otp: string;
   newPassword: string;
-};
-export type IUpdateProfile = {
-  firstName?: string;
-  lastName?: string;
-  bio?: string;
-  age?: number;
-};
+}

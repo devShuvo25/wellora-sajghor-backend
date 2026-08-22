@@ -1,139 +1,231 @@
-// user.service.ts
 import * as bcrypt from 'bcrypt';
 import httpStatus from 'http-status';
+import config from '../../../config';
 import AppError from '../../errors/AppError';
 import prisma from '../../utils/prisma';
-import { IUpdateUser } from './user.interface';
+import { IAddressPayload, IUpdateProfile, IUserFilterOptions } from './user.interface';
+import { Prisma, Role, UserStatus } from '@prisma/client';
 
-// user.service.ts
-
-interface IGetAllUsersParams {
-  page?: number;
-  limit?: number;
-}
-
-const getAllUsersFromDB = async (params?: IGetAllUsersParams) => {
-  const page = params?.page && params.page > 0 ? params.page : 1;
-  const limit = params?.limit && params.limit > 0 ? params.limit : 5;
+const getAllUsers = async (filters: IUserFilterOptions) => {
+  const page = Number(filters.page) || 1;
+  const limit = Number(filters.limit) || 10;
   const skip = (page - 1) * limit;
 
-  const [users, total] = await prisma.$transaction([
+  const andConditions: Prisma.UserWhereInput[] = [];
+
+  if (filters.searchTerm) {
+    andConditions.push({
+      OR: [
+        { name: { contains: filters.searchTerm, mode: 'insensitive' } },
+        { email: { contains: filters.searchTerm, mode: 'insensitive' } },
+        { phoneNumber: { contains: filters.searchTerm, mode: 'insensitive' } },
+      ],
+    });
+  }
+
+  if (filters.role) {
+    andConditions.push({ role: filters.role });
+  }
+
+  if (filters.status) {
+    andConditions.push({ status: filters.status });
+  }
+
+  const whereCondition: Prisma.UserWhereInput = andConditions.length > 0 ? { AND: andConditions } : {};
+
+  const sortBy = filters.sortBy || 'createdAt';
+  const sortOrder = filters.sortOrder || 'desc';
+
+  const [users, total] = await Promise.all([
     prisma.user.findMany({
+      where: whereCondition,
       skip,
       take: limit,
+      orderBy: { [sortBy]: sortOrder },
       select: {
         id: true,
-        firstName: true,
-        lastName: true,
+        name: true,
         email: true,
+        phoneNumber: true,
         role: true,
         status: true,
+        avatar: true,
+        emailVerified: true,
         createdAt: true,
-        updatedAt: true,
+        distributorProfile: {
+          select: {
+            id: true,
+            tier: true,
+            referralCode: true,
+            totalSales: true,
+            availableBalance: true,
+          },
+        },
+        loyaltyAccount: {
+          select: {
+            availablePoints: true,
+            currentTier: true,
+          },
+        },
       },
-      orderBy: { createdAt: 'desc' },
     }),
-    prisma.user.count(),
+    prisma.user.count({ where: whereCondition }),
   ]);
 
   return {
-    data: users,
     meta: {
       page,
       limit,
       total,
       totalPages: Math.ceil(total / limit),
     },
+    data: users,
   };
 };
-const getUserByIdFromDB = async (id: string) => {
+
+const getUserById = async (id: string) => {
   const user = await prisma.user.findUnique({
     where: { id },
     select: {
       id: true,
-      firstName: true,
-      lastName: true,
+      name: true,
       email: true,
+      phoneNumber: true,
       role: true,
       status: true,
+      avatar: true,
+      emailVerified: true,
       createdAt: true,
-      updatedAt: true,
-      categories: {
-        select: {
-          id: true,
-          name: true,
-        },
-      },
+      addresses: true,
+      distributorProfile: true,
+      loyaltyAccount: true,
     },
   });
+
   if (!user) {
     throw new AppError(httpStatus.NOT_FOUND, 'User not found');
   }
+
   return user;
 };
 
-const updateUserIntoDB = async (id: string, payload: IUpdateUser) => {
-  if (payload.password) {
-    payload.password = await bcrypt.hash(payload.password, 10);
+const updateProfile = async (userId: string, payload: IUpdateProfile) => {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+  });
+
+  if (!user) {
+    throw new AppError(httpStatus.NOT_FOUND, 'User not found');
   }
-  const user = await prisma.user.update({
-    where: { id },
-    data: payload,
+
+  const updateData: Prisma.UserUpdateInput = {};
+
+  if (payload.name) updateData.name = payload.name;
+  if (payload.phoneNumber) updateData.phoneNumber = payload.phoneNumber;
+  if (payload.avatar) updateData.avatar = payload.avatar;
+
+  if (payload.newPassword) {
+    if (!payload.oldPassword) {
+      throw new AppError(httpStatus.BAD_REQUEST, 'Old password is required to set a new password');
+    }
+
+    const isMatch = await bcrypt.compare(payload.oldPassword, user.password);
+    if (!isMatch) {
+      throw new AppError(httpStatus.BAD_REQUEST, 'Old password does not match');
+    }
+
+    updateData.password = await bcrypt.hash(
+      payload.newPassword,
+      Number(config.bcrypt_salt_rounds) || 12,
+    );
+  }
+
+  const updatedUser = await prisma.user.update({
+    where: { id: userId },
+    data: updateData,
     select: {
       id: true,
-      firstName: true,
-      lastName: true,
+      name: true,
       email: true,
+      phoneNumber: true,
       role: true,
       status: true,
+      avatar: true,
+      updatedAt: true,
     },
   });
-  // If changing to ADMIN, create AdminPermission if not exists
-  if (payload.role === 'ADMIN') {
-    const existingPerm = await prisma.adminPermission.findUnique({ where: { userId: id } });
-    if (!existingPerm) {
-      await prisma.adminPermission.create({
-        data: { userId: id },
-      });
-    }
-  }
-  return user;
+
+  return updatedUser;
 };
 
-const deleteUserFromDB = async (id: string) => {
-  const user = await prisma.user.findUnique({ where: { id } });
-  if (!user) {
-    throw new AppError(httpStatus.NOT_FOUND, 'User not found');
-  }
-  await prisma.user.delete({ where: { id } });
-  return { id };
-};
-
-const assignCategoriesToUserDB = async (userId: string, categoryIds: string[]) => {
+const updateUserStatusAndRole = async (
+  userId: string,
+  payload: { status?: UserStatus; role?: Role },
+) => {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) {
     throw new AppError(httpStatus.NOT_FOUND, 'User not found');
   }
-  // Validate categories exist
-  const categories = await prisma.category.findMany({ where: { id: { in: categoryIds } } });
-  if (categories.length !== categoryIds.length) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Some categories not found');
-  }
-  await prisma.user.update({
+
+  return await prisma.user.update({
     where: { id: userId },
-    data: {
-      categories: {
-        set: categoryIds.map(id => ({ id })),
-      },
+    data: payload,
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      status: true,
+      updatedAt: true,
     },
   });
-  return { userId, assignedCategories: categoryIds };
+};
+
+const addAddress = async (userId: string, payload: IAddressPayload) => {
+  if (payload.isDefault) {
+    await prisma.address.updateMany({
+      where: { userId },
+      data: { isDefault: false },
+    });
+  }
+
+  return await prisma.address.create({
+    data: {
+      userId,
+      ...payload,
+    },
+  });
+};
+
+const getUserAddresses = async (userId: string) => {
+  return await prisma.address.findMany({
+    where: { userId },
+    orderBy: { isDefault: 'desc' },
+  });
+};
+
+const deleteAddress = async (userId: string, addressId: string) => {
+  const address = await prisma.address.findFirst({
+    where: { id: addressId, userId },
+  });
+
+  if (!address) {
+    throw new AppError(httpStatus.NOT_FOUND, 'Address not found');
+  }
+
+  await prisma.address.delete({
+    where: { id: addressId },
+  });
+
+  return { message: 'Address deleted successfully' };
 };
 
 export const UserServices = {
-  getAllUsersFromDB,
-  getUserByIdFromDB,
-  updateUserIntoDB,
-  deleteUserFromDB,
-  assignCategoriesToUserDB,
+  getAllUsers,
+  getUserById,
+  updateProfile,
+  updateUserStatusAndRole,
+  addAddress,
+  getUserAddresses,
+  deleteAddress,
 };

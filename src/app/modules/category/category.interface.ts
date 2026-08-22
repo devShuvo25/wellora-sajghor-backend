@@ -1,10 +1,13 @@
-// category.types.ts
-export type ICreateCategory = {
+export interface ICreateCategory {
   name: string;
+  slug?: string;
   description?: string;
-};
+  image?: string;
+}
 
-export type IUpdateCategory = {
+export interface IUpdateCategory {
   name?: string;
+  slug?: string;
   description?: string;
-};
+  image?: string;
+}

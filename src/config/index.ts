@@ -20,4 +20,5 @@ export default {
     secretAccessKey: process.env.DO_SPACE_SECRET_KEY,
     bucket: process.env.DO_SPACE_BUCKET,
   },
+  OTP : process.env.OTP,
 };

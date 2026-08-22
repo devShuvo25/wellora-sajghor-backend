@@ -4,7 +4,7 @@ type TMeta = {
   limit: number;
   page: number;
   total: number;
-  totalPage: number;
+  totalPages: number;
 };
 
 type TResponse<T> = {
@@ -17,7 +17,7 @@ type TResponse<T> = {
 
 const sendResponse = <T>(res: Response, data: TResponse<T>) => {
   res.status(data?.statusCode).json({
-    success: data?.success || data?.statusCode < 400 ? true : false,
+    success: data?.success !== undefined ? data.success : data?.statusCode < 400,
     statusCode: data?.statusCode,
     message: data.message,
     meta: data.meta,

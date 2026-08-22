@@ -1,27 +1,29 @@
-// category.route.ts
 import express from 'express';
+import auth from '../../middlewares/auth';
 import validateRequest from '../../middlewares/validateRequest';
 import { CategoryController } from './category.controller';
-import { categoryValidation } from './category.validation';
+import { CategoryValidation } from './category.validation';
+import { Role } from '@prisma/client';
 
 const router = express.Router();
 
+router.get('/', CategoryController.getAllCategories);
+router.get('/:id', CategoryController.getCategoryByIdOrSlug);
+
 router.post(
   '/',
-  validateRequest(categoryValidation.createCategory),
-  CategoryController.createCategory
-); // Add auth('SUPERADMIN', 'ADMIN')
-
-router.get('/', CategoryController.getAllCategories); // Add auth()
-
-router.get('/:id', CategoryController.getCategoryById); // Add auth()
+  auth(Role.ADMIN),
+  validateRequest(CategoryValidation.createCategoryValidationSchema),
+  CategoryController.createCategory,
+);
 
 router.patch(
   '/:id',
-  validateRequest(categoryValidation.updateCategory),
-  CategoryController.updateCategory
-); // Add auth('SUPERADMIN', 'ADMIN')
+  auth(Role.ADMIN),
+  validateRequest(CategoryValidation.updateCategoryValidationSchema),
+  CategoryController.updateCategory,
+);
 
-router.delete('/:id', CategoryController.deleteCategory); // Add auth('SUPERADMIN', 'ADMIN')
+router.delete('/:id', auth(Role.ADMIN), CategoryController.deleteCategory);
 
 export const CategoryRoutes = router;
