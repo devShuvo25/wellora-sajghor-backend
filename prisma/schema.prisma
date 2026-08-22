@@ -1,0 +1,450 @@
+// ==============================================================================
+// WELLORA (সাজঘর) - Complete Enterprise PostgreSQL Prisma Schema
+// ==============================================================================
+// Provider: PostgreSQL
+// Framework: Prisma ORM v5 / v6
+// Coverage: E-Commerce Storefront, Affiliate/Distributor Portal, Admin Panel, 
+//           Wallet & Payout System, Loyalty Rewards, Wishlist, & Marketing Kits
+// ==============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ==============================================================================
+// ENUMS
+// ==============================================================================
+
+enum Role {
+  ADMIN
+  DISTRIBUTOR
+  CUSTOMER
+}
+
+enum UserStatus {
+  ACTIVE
+  PENDING
+  SUSPENDED
+}
+
+enum DistributorTier {
+  BRONZE // 12% commission
+  SILVER // 15% commission
+  GOLD   // 18% commission
+}
+
+enum OrderStatus {
+  PENDING
+  PROCESSING
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PENDING
+  PAID
+  REFUNDED
+}
+
+enum PaymentMethod {
+  COD
+  BKASH
+  NAGAD
+  CARD
+}
+
+enum OrderChannel {
+  WEBSITE
+  WHATSAPP
+  FACEBOOK
+  MESSENGER
+  DIRECT_LINK
+  OFFLINE
+  TIKTOK
+  INSTAGRAM
+}
+
+enum WalletTransactionType {
+  COMMISSION_CREDIT
+  WITHDRAWAL_DEBIT
+  BONUS_CREDIT
+  REFUND_DEDUCTION
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  REJECTED
+  CANCELLED
+}
+
+enum AssetType {
+  IMAGE
+  VIDEO
+}
+
+enum LoyaltyTransactionType {
+  EARNED_ORDER
+  REDEEMED_DISCOUNT
+  BONUS
+}
+
+// ==============================================================================
+// USER & AUTHENTICATION MODELS
+// ==============================================================================
+
+model User {
+  id            String     @id @default(uuid())
+  email         String     @unique
+  password      String
+  name          String
+  phoneNumber   String?
+  role          Role       @default(CUSTOMER)
+  status        UserStatus @default(ACTIVE)
+  avatar        String?
+  emailVerified Boolean    @default(false)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  // Relationships
+  distributorProfile DistributorProfile?
+  addresses          Address[]
+  orders             Order[]              @relation("CustomerOrders")
+  wishlistItems      Wishlist[]
+  productReviews     ProductReview[]
+  loyaltyAccount     LoyaltyAccount?
+  refreshTokens      RefreshToken[]
+  otpVerifications   OtpVerification[]
+
+  @@index([email])
+  @@index([role])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model OtpVerification {
+  id        String   @id @default(uuid())
+  email     String
+  otp       String
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([email, otp])
+}
+
+// ==============================================================================
+// DISTRIBUTOR / AFFILIATE PORTAL MODELS
+// ==============================================================================
+
+model DistributorProfile {
+  id                   String          @id @default(uuid())
+  userId               String          @unique
+  user                 User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tier                 DistributorTier @default(BRONZE)
+  referralCode         String          @unique
+  region               String?
+  commissionRate       Float           @default(0.12) // 12% = 0.12
+  totalSales           Float           @default(0.0)
+  availableBalance     Float           @default(0.0)
+  pendingCommissions   Float           @default(0.0)
+  bankName             String?
+  accountNumber        String?
+  accountName          String?
+  bkashNumber          String?
+  nagadNumber          String?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  // Relationships
+  distributorOrders   Order[]              @relation("DistributorOrders")
+  walletTransactions  WalletTransaction[]
+  referralLinks       ReferralLink[]
+  subAffiliates       TeamOverride[]       @relation("ParentDistributor")
+  parentAffiliates    TeamOverride[]       @relation("SubDistributor")
+
+  @@index([referralCode])
+}
+
+model TeamOverride {
+  id                    String             @id @default(uuid())
+  parentDistributorId   String
+  subDistributorId      String
+  overrideRate          Float              @default(0.03) // 3% override bonus
+  parentDistributor     DistributorProfile @relation("ParentDistributor", fields: [parentDistributorId], references: [id], onDelete: Cascade)
+  subDistributor        DistributorProfile @relation("SubDistributor", fields: [subDistributorId], references: [id], onDelete: Cascade)
+  createdAt             DateTime           @default(now())
+
+  @@unique([parentDistributorId, subDistributorId])
+}
+
+model WalletTransaction {
+  id               String                @id @default(uuid())
+  distributorId    String
+  distributor      DistributorProfile    @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  type             WalletTransactionType
+  amount           Float
+  status           TransactionStatus     @default(PENDING)
+  paymentMethod    PaymentMethod?
+  accountNumber    String?
+  accountName      String?
+  referenceOrderNo String?
+  notes            String?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  @@index([distributorId])
+}
+
+model ReferralLink {
+  id               String             @id @default(uuid())
+  distributorId    String
+  distributor      DistributorProfile @relation(fields: [distributorId], references: [id], onDelete: Cascade)
+  productId        String?
+  product          Product?           @relation(fields: [productId], references: [id], onDelete: SetNull)
+  campaignTag      String
+  referralCode     String
+  fullUrl          String
+  clicksCount      Int                @default(0)
+  conversionsCount Int                @default(0)
+  createdAt        DateTime           @default(now())
+
+  @@index([referralCode])
+}
+
+// ==============================================================================
+// PRODUCT CATALOG MODELS
+// ==============================================================================
+
+model Category {
+  id          String    @id @default(uuid())
+  name        String    @unique // E.g., Cleanser, Toner, Serum, Moisturizer, Sunscreen
+  slug        String    @unique
+  description String?
+  image       String?
+  products    Product[]
+  createdAt   DateTime  @default(now())
+}
+
+model Product {
+  id                        String          @id @default(uuid())
+  brand                     String          // E.g., COSRX, Beauty of Joseon, Anua, WELLORA
+  name                      String
+  slug                      String          @unique
+  categoryId                String
+  category                  Category        @relation(fields: [categoryId], references: [id])
+  price                     Float
+  comparePrice              Float?          // Original strike-through price
+  points                    Int             @default(10) // Loyalty points earned per unit
+  image                     String          // Main display image
+  altText                   String?
+  description               String          @db.Text
+  volume                    String?         // E.g., "100ml / 3.38 fl.oz"
+  keyIngredients            String[]        // Postgres scalar array
+  skinType                  String[]        // E.g., ["Dry", "Sensitive", "Combination"]
+  isTrending                Boolean         @default(false)
+  rating                    Float           @default(5.0)
+  reviewsCount              Int             @default(0)
+  inStock                   Boolean         @default(true)
+  stockQuantity             Int             @default(100)
+  distributorCommissionRate Float           @default(0.15) // Default 15%
+  createdAt                 DateTime        @default(now())
+  updatedAt                 DateTime        @updatedAt
+
+  // Relationships
+  galleryImages ProductImage[]
+  reviews       ProductReview[]
+  orderItems    OrderItem[]
+  wishlist      Wishlist[]
+  referralLinks ReferralLink[]
+
+  @@index([slug])
+  @@index([brand])
+  @@index([categoryId])
+}
+
+model ProductImage {
+  id        String   @id @default(uuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url       String
+  altText   String?
+  isPrimary Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model ProductReview {
+  id        String   @id @default(uuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rating    Int
+  comment   String   @db.Text
+  createdAt DateTime @default(now())
+}
+
+// ==============================================================================
+// ORDER & FULFILLMENT MODELS
+// ==============================================================================
+
+model Order {
+  id              String        @id @default(uuid())
+  orderNumber     String        @unique // E.g., #ORD-9021 or #WL-8472
+  customerId      String?
+  customer        User?         @relation("CustomerOrders", fields: [customerId], references: [id], onDelete: SetNull)
+  distributorId   String?
+  distributor     DistributorProfile? @relation("DistributorOrders", fields: [distributorId], references: [id], onDelete: SetNull)
+  
+  // Shipping info
+  customerName    String
+  phoneNumber     String
+  deliveryAddress String
+  city            String
+  district        String?
+  channel         OrderChannel  @default(WEBSITE)
+  
+  // Totals
+  subtotal        Float
+  shippingFee     Float         @default(0.0)
+  discountAmount  Float         @default(0.0)
+  totalAmount     Float
+  pointsEarned    Int           @default(0)
+
+  // Statuses
+  paymentMethod   PaymentMethod @default(COD)
+  paymentStatus   PaymentStatus @default(UNPAID)
+  status          OrderStatus   @default(PENDING)
+  trackingCode    String?
+  courierName     String?       // E.g., Steadfast, Pathao, RedX
+  notes           String?
+  
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relationships
+  items           OrderItem[]
+
+  @@index([orderNumber])
+  @@index([customerId])
+  @@index([distributorId])
+  @@index([status])
+}
+
+model OrderItem {
+  id         String   @id @default(uuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id])
+  quantity   Int
+  unitPrice  Float
+  unitPoints Int      @default(0)
+  totalPrice Float
+}
+
+// ==============================================================================
+// CUSTOMER WISHLIST & ADDRESSES
+// ==============================================================================
+
+model Wishlist {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, productId])
+}
+
+model Address {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String   // E.g., "Home", "Office"
+  recipient String
+  phone     String
+  address   String
+  city      String
+  district  String?
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+// ==============================================================================
+// LOYALTY & REWARDS PROGRAM
+// ==============================================================================
+
+model LoyaltyAccount {
+  id                 String               @id @default(uuid())
+  userId             String               @unique
+  user               User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  availablePoints    Int                  @default(0)
+  totalEarnedPoints  Int                  @default(0)
+  currentTier        String               @default("VIP Bronze")
+  nextTierPoints     Int                  @default(600)
+  createdAt          DateTime             @default(now())
+
+  transactions       LoyaltyTransaction[]
+}
+
+model LoyaltyTransaction {
+  id               String                 @id @default(uuid())
+  loyaltyAccountId String
+  loyaltyAccount   LoyaltyAccount         @relation(fields: [loyaltyAccountId], references: [id], onDelete: Cascade)
+  points           Int                    // Positive for earned, negative for redeemed
+  type             LoyaltyTransactionType
+  description      String
+  referenceOrderId String?
+  createdAt        DateTime               @default(now())
+}
+
+// ==============================================================================
+// MARKETING ASSETS & CAMPAIGN KITS
+// ==============================================================================
+
+model MarketingKit {
+  id               String    @id @default(uuid())
+  title            String
+  category         String    // E.g., "Serum & Toners", "Moisturizers"
+  formatType       String    // E.g., "Images & Reels", "Video"
+  type             AssetType @default(IMAGE)
+  image            String    // Cover preview
+  caption          String?   @db.Text
+  suggestedPrice   Float?
+  downloadUrl      String
+  fileSize         String    // E.g., "48.5 MB"
+  downloadsCount   Int       @default(0)
+  status           String    @default("Published")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+// ==============================================================================
+// SYSTEM & PORTAL SETTINGS
+// ==============================================================================
+
+model SystemSetting {
+  id          String   @id @default(uuid())
+  key         String   @unique // E.g., "store_name", "gold_tier_rate", "bkash_merchant"
+  value       String
+  description String?
+  updatedAt   DateTime @updatedAt
+}

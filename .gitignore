@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+.env.*
+
+# Vercel
+.vercel/
+
+# Build
+dist/
+
+# Logs
+*.log
+
+# Local/config files
+config.bat
+
+# Generated files
+generate-module.ts
