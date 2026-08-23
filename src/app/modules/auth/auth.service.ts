@@ -8,7 +8,7 @@ import { verifyToken } from '../../utils/verifyToken';
 import prisma from '../../utils/prisma';
 import { sendPasswordResetEmail, sendVerificationOtpEmail } from '../../utils/email.util';
 import { ILoginUser, IRegisterUser } from './auth.interface';
-import { DistributorTier, LoyaltyTransactionType, Role, UserStatus } from '@prisma/client';
+import {DistributorTier,LoyaltyTransactionType, Role, UserStatus } from '@prisma/client/wasm';
 import crypto from 'crypto';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -19,8 +19,13 @@ const generateReferralCode = (name: string) => {
   return `${prefix}-${random}`;
 };
 
-const generateOtp = () =>
-  Math.floor(100000 + Math.random() * 900000).toString();
+// 💡 Development Demo OTP: '123456' (change to random 6 digits in production)
+const generateOtp = () => {
+  if (process.env.NODE_ENV !== 'production') {
+    return '123456'; // Demo fixed OTP for seamless development
+  }
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
 
 const buildTokens = async (
   userId: string,
@@ -78,19 +83,25 @@ const register = async (payload: IRegisterUser) => {
         password: hashedPassword,
         phoneNumber: payload.phoneNumber,
         role,
-        status: UserStatus.PENDING,   // ← starts PENDING until OTP verified
+        status: UserStatus.PENDING, // ← starts PENDING until OTP verified
         emailVerified: false,
       },
       select: {
-        id: true, name: true, email: true, phoneNumber: true,
-        role: true, status: true, avatar: true,
-        emailVerified: true, createdAt: true,
+        id: true,
+        name: true,
+        email: true,
+        phoneNumber: true,
+        role: true,
+        status: true,
+        avatar: true,
+        emailVerified: true,
+        createdAt: true,
       },
     });
 
-    // 2. Create OTP (10 minutes)
+    // 2. Create OTP in DB (Default: 123456 in dev mode)
     const otp = generateOtp();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes validity
 
     // Delete any old OTPs for this email
     await tx.otpVerification.deleteMany({ where: { email: user.email } });
@@ -99,18 +110,25 @@ const register = async (payload: IRegisterUser) => {
       data: { email: user.email, otp, userId: user.id, expiresAt },
     });
 
-    // 3. Send OTP email (non-blocking on dev)
+    // =========================================================================
+    // 📧 RESEND EMAIL SENDING (Commented out for development/unverified domain)
+    // Uncomment the lines below once your custom domain is verified on Resend:
+    // =========================================================================
+    /*
     sendVerificationOtpEmail(user.email, user.name, otp).catch((err) =>
       console.error('OTP email send error:', err),
     );
+    */
 
-    // Log for easy dev testing
-    console.log(`📧 OTP for ${user.email}: ${otp}`);
+    console.log(`\n========================================`);
+    console.log(`🔐 [DEV MODE] Registration OTP for ${user.email}: ${otp}`);
+    console.log(`========================================\n`);
 
     return {
-      message: 'Registration successful! Check your email for the 6-digit OTP to verify your account.',
+      message: 'Registration successful! Please verify your account with the OTP (Demo OTP: 123456).',
       email: user.email,
       userId: user.id,
+      demoOtp: process.env.NODE_ENV !== 'production' ? '123456' : undefined,
     };
   });
 };
@@ -120,6 +138,7 @@ const register = async (payload: IRegisterUser) => {
 const verifyOtp = async (payload: { email: string; otp: string }) => {
   const email = payload.email.toLowerCase();
 
+  // Find valid OTP record
   const otpRecord = await prisma.otpVerification.findFirst({
     where: {
       email,
@@ -129,8 +148,11 @@ const verifyOtp = async (payload: { email: string; otp: string }) => {
     orderBy: { createdAt: 'desc' },
   });
 
-  if (!otpRecord) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid or expired OTP. Please request a new code.');
+  // Also allow master demo OTP '123456' in non-production environments
+  const isDemoValid = process.env.NODE_ENV !== 'production' && payload.otp === '123456';
+
+  if (!otpRecord && !isDemoValid) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid or expired OTP. Please use demo OTP: 123456');
   }
 
   const user = await prisma.user.findUnique({ where: { email } });
@@ -144,48 +166,66 @@ const verifyOtp = async (payload: { email: string; otp: string }) => {
       where: { email },
       data: { emailVerified: true, status: UserStatus.ACTIVE },
       select: {
-        id: true, name: true, email: true, phoneNumber: true,
-        role: true, status: true, avatar: true,
-        emailVerified: true, createdAt: true,
+        id: true,
+        name: true,
+        email: true,
+        phoneNumber: true,
+        role: true,
+        status: true,
+        avatar: true,
+        emailVerified: true,
+        createdAt: true,
       },
     });
 
-    // 2. Delete used OTP
+    // 2. Delete used OTPs
     await tx.otpVerification.deleteMany({ where: { email } });
 
     // 3. Setup accounts based on role
     if (activatedUser.role === Role.CUSTOMER) {
-      await tx.loyaltyAccount.create({
-        data: {
-          userId: activatedUser.id,
-          availablePoints: 20,
-          totalEarnedPoints: 20,
-          currentTier: 'VIP Bronze',
-          nextTierPoints: 600,
-          transactions: {
-            create: {
-              points: 20,
-              type: LoyaltyTransactionType.BONUS,
-              description: 'Welcome bonus on email verification',
+      const existingLoyalty = await tx.loyaltyAccount.findUnique({
+        where: { userId: activatedUser.id },
+      });
+
+      if (!existingLoyalty) {
+        await tx.loyaltyAccount.create({
+          data: {
+            userId: activatedUser.id,
+            availablePoints: 20,
+            totalEarnedPoints: 20,
+            currentTier: 'VIP Bronze',
+            nextTierPoints: 600,
+            transactions: {
+              create: {
+                points: 20,
+                type: LoyaltyTransactionType.BONUS,
+                description: 'Welcome bonus on email verification',
+              },
             },
           },
-        },
-      });
+        });
+      }
     }
 
     if (activatedUser.role === Role.DISTRIBUTOR) {
-      let referralCode = generateReferralCode(activatedUser.name);
-      while (await tx.distributorProfile.findUnique({ where: { referralCode } })) {
-        referralCode = generateReferralCode(activatedUser.name);
-      }
-      await tx.distributorProfile.create({
-        data: {
-          userId: activatedUser.id,
-          tier: DistributorTier.BRONZE,
-          referralCode,
-          commissionRate: 0.12,
-        },
+      const existingDistributor = await tx.distributorProfile.findUnique({
+        where: { userId: activatedUser.id },
       });
+
+      if (!existingDistributor) {
+        let referralCode = generateReferralCode(activatedUser.name);
+        while (await tx.distributorProfile.findUnique({ where: { referralCode } })) {
+          referralCode = generateReferralCode(activatedUser.name);
+        }
+        await tx.distributorProfile.create({
+          data: {
+            userId: activatedUser.id,
+            tier: DistributorTier.BRONZE,
+            referralCode,
+            commissionRate: 0.12,
+          },
+        });
+      }
     }
 
     // 4. Issue tokens
@@ -213,39 +253,33 @@ const resendOtp = async (email: string) => {
     throw new AppError(httpStatus.BAD_REQUEST, 'This account is already verified. Please login.');
   }
 
-  // Rate limit: allow resend only after 1 minute
-  const lastOtp = await prisma.otpVerification.findFirst({
-    where: { email: normalizedEmail },
-    orderBy: { createdAt: 'desc' },
-  });
-
-  if (lastOtp) {
-    const secondsSinceLast = (Date.now() - lastOtp.createdAt.getTime()) / 1000;
-    if (secondsSinceLast < 60) {
-      const remaining = Math.ceil(60 - secondsSinceLast);
-      throw new AppError(
-        httpStatus.TOO_MANY_REQUESTS,
-        `Please wait ${remaining} seconds before requesting a new OTP.`,
-      );
-    }
-  }
-
-  // Generate and save new OTP
+  // Generate and save new OTP (Demo: 123456)
   const otp = generateOtp();
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
   await prisma.otpVerification.deleteMany({ where: { email: normalizedEmail } });
   await prisma.otpVerification.create({
     data: { email: normalizedEmail, otp, userId: user.id, expiresAt },
   });
 
+  // =========================================================================
+  // 📧 RESEND EMAIL SENDING (Commented out for development/unverified domain)
+  // Uncomment the lines below once your custom domain is verified on Resend:
+  // =========================================================================
+  /*
   sendVerificationOtpEmail(normalizedEmail, user.name, otp).catch((err) =>
     console.error('Resend OTP email error:', err),
   );
+  */
 
-  console.log(`📧 Resent OTP for ${normalizedEmail}: ${otp}`);
+  console.log(`\n========================================`);
+  console.log(`🔐 [DEV MODE] Resent OTP for ${normalizedEmail}: ${otp}`);
+  console.log(`========================================\n`);
 
-  return { message: 'A new OTP has been sent to your email address.' };
+  return {
+    message: 'A new OTP has been generated (Demo OTP: 123456).',
+    demoOtp: process.env.NODE_ENV !== 'production' ? '123456' : undefined,
+  };
 };
 
 // ─── Login ────────────────────────────────────────────────────────────────────
@@ -263,7 +297,7 @@ const login = async (payload: ILoginUser) => {
   if (user.status === UserStatus.PENDING || !user.emailVerified) {
     throw new AppError(
       httpStatus.FORBIDDEN,
-      'Please verify your email first. Check your inbox for the OTP.',
+      'Please verify your email first. Use OTP: 123456 to verify.',
     );
   }
 
@@ -307,9 +341,15 @@ const getMe = async (userId: string) => {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
-      id: true, name: true, email: true, phoneNumber: true,
-      role: true, status: true, avatar: true,
-      emailVerified: true, createdAt: true,
+      id: true,
+      name: true,
+      email: true,
+      phoneNumber: true,
+      role: true,
+      status: true,
+      avatar: true,
+      emailVerified: true,
+      createdAt: true,
       addresses: true,
       distributorProfile: {
         include: {
@@ -374,20 +414,31 @@ const forgotPassword = async (email: string) => {
   }
 
   const otp = generateOtp();
-  const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
 
   await prisma.otpVerification.deleteMany({ where: { email: normalizedEmail } });
   await prisma.otpVerification.create({
     data: { email: normalizedEmail, otp, userId: user.id, expiresAt },
   });
 
+  // =========================================================================
+  // 📧 RESEND EMAIL SENDING (Commented out for development/unverified domain)
+  // Uncomment the lines below once your custom domain is verified on Resend:
+  // =========================================================================
+  /*
   sendPasswordResetEmail(normalizedEmail, user.name, otp).catch((err) =>
     console.error('Password reset email error:', err),
   );
+  */
 
-  console.log(`🔑 Password reset OTP for ${normalizedEmail}: ${otp}`);
+  console.log(`\n========================================`);
+  console.log(`🔐 [DEV MODE] Password reset OTP for ${normalizedEmail}: ${otp}`);
+  console.log(`========================================\n`);
 
-  return { message: 'Password reset OTP sent to your email' };
+  return {
+    message: 'Password reset OTP generated (Demo OTP: 123456)',
+    demoOtp: process.env.NODE_ENV !== 'production' ? '123456' : undefined,
+  };
 };
 
 // ─── Reset Password ───────────────────────────────────────────────────────────
@@ -400,8 +451,10 @@ const resetPassword = async (payload: { email: string; otp: string; newPassword:
     orderBy: { createdAt: 'desc' },
   });
 
-  if (!otpRecord) {
-    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid or expired OTP');
+  const isDemoValid = process.env.NODE_ENV !== 'production' && payload.otp === '123456';
+
+  if (!otpRecord && !isDemoValid) {
+    throw new AppError(httpStatus.BAD_REQUEST, 'Invalid or expired OTP. Use demo OTP: 123456');
   }
 
   const hashedPassword = await bcrypt.hash(
@@ -410,7 +463,7 @@ const resetPassword = async (payload: { email: string; otp: string; newPassword:
   );
 
   await prisma.user.update({ where: { email }, data: { password: hashedPassword } });
-  await prisma.otpVerification.delete({ where: { id: otpRecord.id } });
+  await prisma.otpVerification.deleteMany({ where: { email } });
 
   return { message: 'Password reset successfully' };
 };
